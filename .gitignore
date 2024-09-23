@@ -1,0 +1,9 @@
+.env
+.pdf
+Brooklyn_Neighborhoods_pdfs/
+faiss_index_BROOKLYN_williamsburg/
+Manhattan_neighborhoods_pdfs/
+neighborhood_pdfs/
+QueensNeighborhoods_pdfs/
+StatenIsland_neighborhoods_pdfs/
+TheBronx_neighborhoods_pdfs/
