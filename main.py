@@ -130,6 +130,23 @@ def get_relevant_documents(input_dict):
     print(f"Retrieved {len(all_docs)} total documents for {query}")
     return all_docs
 
+
+# lero lero lero 
+
+combined_question = """
+Provide detailed information about the neighborhood, including:
+- A list of all restaurants mentioned.
+- A list of all public spaces mentioned.
+- A list of all museums mentioned.
+- A list of all nightlife spots mentioned.
+- The history of the neighborhood.
+- The location of the neighborhood.
+- The unique aspects of the neighborhood.
+- The key demographic information for the neighborhood.
+"""
+
+all_results = {}  # Initialize the dictionary to store combined results
+
 for neighborhood in test_hood:
     pdf_path = os.path.join(base_directory, f"{neighborhood} — CityNeighborhoods.NYC.pdf")
 
@@ -172,39 +189,20 @@ for neighborhood in test_hood:
         | StrOutputParser()
     )
 
-    # Run the chain for different questions
-    questions = [
-        "Provide a list of all restaurants mentioned for this neighborhood.",
-        "Provide a list of all public spaces mentioned for this neighborhood.",
-        "Provide a list of all museums mentioned for this neighborhood.",
-        "Provide a list of all nightlife spots mentioned for this neighborhood."
-    ]
+    # Run the chain for the combined question
+    res = chain.invoke({"neighborhood": neighborhood, "question": combined_question})
+    print(f"Raw response for {neighborhood} - Combined Question:")
+    print(res)
+    print("\n" + "="*50 + "\n")
+    
 
-    all_results = {}
-    for question in questions:
-        res = chain.invoke({"neighborhood": neighborhood, "question": question})
-        print(f"Results for {neighborhood} - {question}:")
-        print(res)
-        print("\n" + "="*50 + "\n")
-        
-        # Parse the result and update all_results
-        try:
-            parsed_res = json.loads(res)
-            for key, value in parsed_res.items():
-                if key not in all_results:
-                    all_results[key] = value
-                elif isinstance(value, dict):
-                    all_results[key].update(value)
-        except json.JSONDecodeError:
-            print(f"Error parsing result for question: {question}")
 
-    # Print the combined results
-    print(f"Combined results for {neighborhood}:")
-    print(json.dumps(all_results, indent=2))
 
-    time.sleep(6)  
 
-print("Processing complete.")
+
+
+
+
 
 
 
