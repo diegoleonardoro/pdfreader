@@ -1,54 +1,42 @@
 import os
-import glob
+import json
 from dotenv import load_dotenv
-from langchain_community.document_loaders import PyPDFLoader
-from langchain_community.vectorstores import FAISS
-from langchain_huggingface import HuggingFaceEmbeddings
-from langchain import hub
-from langchain.chains.combine_documents import create_stuff_documents_chain
-import re
-import time 
+from langchain_openai import ChatOpenAI
 from langchain.output_parsers import StructuredOutputParser, ResponseSchema
 from langchain.prompts import ChatPromptTemplate, HumanMessagePromptTemplate
-from langchain_openai import ChatOpenAI
 from langchain.schema import StrOutputParser
 from langchain.schema.runnable import RunnablePassthrough
 from db import DatabaseConnector
-from langchain.retrievers import ContextualCompressionRetriever
-from langchain.retrievers.document_compressors import LLMChainExtractor
-import json
-from sentence_transformers import SentenceTransformer
-from sklearn.cluster import AgglomerativeClustering
-from langchain.schema import Document
-
-os.environ["TOKENIZERS_PARALLELISM"] = "false"
-
-# Initialize the db connection:
-db_name = "insiderhood"
-db_connector = DatabaseConnector(dbname=db_name)
-db_connector.connect()
+from bson import json_util
 
 # Load environment variables
 load_dotenv()
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
+# Initialize the db connection
+db_name = "insiderhood"
+db_connector = DatabaseConnector(dbname=db_name)
+db_connector.connect()
+
 # Your existing neighborhood lists here...
 test_hood = ['Williamsburg']
 
-# Base directory containing neighborhood PDFs
-base_directory = "Brooklyn_Neighborhoods_pdfs"
+# Base directory containing neighborhood JSONs
+base_directory = "Brooklyn_neighborhoods"
 
 response_schemas = [
     ResponseSchema(name="History", description="History of the neighborhood"),
     ResponseSchema(name="Location", description="Geographic location and boundaries"),
-    ResponseSchema(name="Neighborhood", description="Unique aspects of this neighborhood"),
+    ResponseSchema(name="Neighborhood Introduction", description="Unique aspects of this neighborhood"),
+    ResponseSchema(name="Interesting Facts", description="Interesting facts of this neighborhood"),
     ResponseSchema(name="Demographics", description="Key demographic information"),
     ResponseSchema(name="Restaurants", description="Dict of restaurants with descriptions"),
     ResponseSchema(name="Public Spaces", description="Dict of public spaces with descriptions"),
     ResponseSchema(name="Museums", description="Dict of museums with descriptions"),
     ResponseSchema(name="Night Life", description="Dict of night life spots with descriptions"),
+    ResponseSchema(name="Attractions", description="Dict of attractions with descriptions"),
 ]
-  
+
 output_parser = StructuredOutputParser.from_response_schemas(response_schemas)
 format_instructions = output_parser.get_format_instructions()
 
@@ -57,144 +45,125 @@ llm = ChatOpenAI(temperature=0)
 
 # Modify the prompt template
 template = """
-You are an expert on New York City neighborhoods. Based ONLY on the provided context, answer the question about {neighborhood}. Do not include any information that is not explicitly stated in the context.
 
-{format_instructions}
+    You are an expert storyteller that specializes on New York City neighborhoods. Paint a vivid picture of {neighborhood} for the category: {category}, using ONLY the provided context. Your words should transport the reader to the streets and the places. Be descriptive, engaging, and colorful in your language, but ensure every detail is grounded in the given information.
 
-Context: {context}
-Question: {question}
+    {format_instructions}
 
-For lists like restaurants, public spaces, museums, and nightlife, provide all items found in the context as a bullet point list. Each item should be in the format:
-- Name: Description
+    Context: {context}
+    Question: Weave a captivating narrative about the {category} of {neighborhood}.
 
-If no specific items are mentioned, state "No specific items mentioned in the context."
+    Your response should be:
+    - Vivid and immersive, bringing the neighborhood to life
+    - Strictly limited to the context provided for the specific category
+    - Rich in sensory details and local flavor
+    - The given context should be rewritten in a way that is more engaging and colorful.
+    - Avoid using imperative language such as "Embark", "Discover", "Explore", or phrases like "Step back in time..." or "Imagine..." or "Step into...". ONLY use descriptive language.
+    - Begin sentences with factual statements or descriptions, not commands or suggestions.
+    - Formatted as a JSON object with a single key matching the category name.
 
-Response:
+    For lists like restaurants, public spaces, museums, nightlife, and attractions, provide all items found in the contextand transform each item into an enticing description. Format as:
+    "Actual Name of Place": "An enticing description that makes the reader want to visit"
+
+    If no specific items are mentioned, state "No specific items mentioned in the context."
+
+    Response (in JSON format):
 """
 
 prompt = ChatPromptTemplate(
     messages=[
         HumanMessagePromptTemplate.from_template(template)
     ],
-    input_variables=["neighborhood", "context", "question"],
+    input_variables=["neighborhood", "context", "category"],
     partial_variables={"format_instructions": format_instructions}
 )
 
-def semantic_text_split(text, max_chunk_size=2000):
-    sentences = text.split('.')
-    sentences = [s.strip() for s in sentences if s.strip()]
-
-    model = SentenceTransformer('all-MiniLM-L6-v2')
-    embeddings = model.encode(sentences)
-
-    clustering_model = AgglomerativeClustering(n_clusters=None, distance_threshold=1.5)
-    clustering_model.fit(embeddings)
-
-    clusters = {}
-    for sentence, cluster in zip(sentences, clustering_model.labels_):
-        if cluster not in clusters:
-            clusters[cluster] = []
-        clusters[cluster].append(sentence)
-
-    chunks = []
-    current_chunk = ""
-    for cluster in sorted(clusters.keys()):
-        cluster_text = ' '.join(clusters[cluster])
-        if len(current_chunk) + len(cluster_text) <= max_chunk_size:
-            current_chunk += ' ' + cluster_text
-        else:
-            chunks.append(current_chunk.strip())
-            current_chunk = cluster_text
-    if current_chunk:
-        chunks.append(current_chunk.strip())
-
-    return chunks
-
-def keyword_retriever(vectorstore, query, keywords, k=30):
-    docs = vectorstore.similarity_search(query, k=k)
-    filtered_docs = [doc for doc in docs if any(keyword in doc.page_content.lower() for keyword in keywords)]
-    return filtered_docs
-
 def get_relevant_documents(input_dict):
-    query = input_dict["neighborhood"]
+    neighborhood = input_dict["neighborhood"]
+    category = input_dict["category"]
     
-    # Always retrieve documents for all categories
-    restaurant_docs = keyword_retriever(new_vectorstore, query, ["restaurant", "dining", "eatery"])
-    public_space_docs = keyword_retriever(new_vectorstore, query, ["park", "square", "public space"])
-    museum_docs = keyword_retriever(new_vectorstore, query, ["museum", "gallery", "exhibition"])
-    nightlife_docs = keyword_retriever(new_vectorstore, query, ["bar", "club", "nightlife"])
+    json_path = os.path.join(base_directory, f"{neighborhood.lower()}.json")
     
-    # Combine all documents
-    all_docs = restaurant_docs + public_space_docs + museum_docs + nightlife_docs
+    if not os.path.exists(json_path):
+        print(f"Warning: The file {json_path} does not exist. Skipping this neighborhood.")
+        return ""
     
-    print(f"Retrieved {len(all_docs)} total documents for {query}")
-    return all_docs
+    with open(json_path, 'r') as file:
+        data = json.load(file)
+    
+    if neighborhood not in data:
+        print(f"Warning: {neighborhood} not found in the JSON file.")
+        return ""
+    
+    if category not in data[neighborhood]:
+        print(f"Warning: {category} not found for {neighborhood} in the JSON file.")
+        return ""
+    
+    return json.dumps(data[neighborhood][category])
 
 
-# lero lero lero 
+chain = (
+    {
+        "context": get_relevant_documents,
+        "neighborhood": lambda x: x["neighborhood"],
+        "category": lambda x: x["category"],
+    }
+    | prompt
+    | llm
+    | StrOutputParser()
+)
 
-combined_question = """
-Provide detailed information about the neighborhood, including:
-- A list of all restaurants mentioned.
-- A list of all public spaces mentioned.
-- A list of all museums mentioned.
-- A list of all nightlife spots mentioned.
-- The history of the neighborhood.
-- The location of the neighborhood.
-- The unique aspects of the neighborhood.
-- The key demographic information for the neighborhood.
-"""
+all_results = {}
 
-all_results = {}  # Initialize the dictionary to store combined results
+def clean_json_string(json_string):
+    if isinstance(json_string, str):
+        # Remove backticks and "json" tags
+        return json_string.replace("```json", "").replace("```", "").strip()
+    return json_string
+
+def parse_llm_output(output, category):
+    if isinstance(output, dict):
+        return output.get(category, output)
+    
+    # Remove backticks and "json" tags
+    output = output.replace("```json", "").replace("```", "").strip()
+    
+    try:
+        # Try to parse the entire output as JSON
+        parsed = json.loads(output)
+        if category in parsed:
+            return parsed[category]
+        else:
+            # If the category is not found, return the entire parsed output
+            return parsed
+    except json.JSONDecodeError:
+        # If JSON parsing fails, return the cleaned string
+        return output.strip('"')
+def prepare_for_mongodb(results):
+    for neighborhood, categories in results.items():
+        for category, value in categories.items():
+            parsed_value = parse_llm_output(value, category)
+            categories[category] = parsed_value
+    return results
 
 for neighborhood in test_hood:
-    pdf_path = os.path.join(base_directory, f"{neighborhood} — CityNeighborhoods.NYC.pdf")
-
-    if not os.path.exists(pdf_path):
-        print(f"Warning: The file {pdf_path} does not exist. Skipping this neighborhood.")
-        continue 
-
-    loader = PyPDFLoader(file_path=pdf_path)
-    raw_documents = loader.load()
-    text = ' '.join([doc.page_content for doc in raw_documents])
-    semantic_chunks = semantic_text_split(text)
-    docs = [Document(page_content=chunk) for chunk in semantic_chunks]
-    print(f"Split into {len(docs)} semantic chunks")
-
-    embeddings = HuggingFaceEmbeddings(model_name="all-MiniLM-L6-v2")
-    vectorstore = FAISS.from_documents(docs, embeddings)
-
-    vectorstore_name = f"faiss_index_BROOKLYN_{neighborhood.replace(' ', '_').lower()}"
-    vectorstore.save_local(vectorstore_name)
-    new_vectorstore = FAISS.load_local(
-        vectorstore_name, embeddings, allow_dangerous_deserialization=True
-    )
-
-    compressor = LLMChainExtractor.from_llm(llm)
-    retriever = new_vectorstore.as_retriever(search_kwargs={"k": 20})
-    compression_retriever = ContextualCompressionRetriever(
-        base_compressor=compressor,
-        base_retriever=retriever
-    )
-
-    chain = (
-        {
-            "context": get_relevant_documents,
-            "neighborhood": lambda x: x["neighborhood"],
-            "question": lambda x: x["question"],
-            "format_instructions": lambda _: format_instructions
-        }
-        | prompt
-        | llm
-        | StrOutputParser()
-    )
-
-    # Run the chain for the combined question
-    res = chain.invoke({"neighborhood": neighborhood, "question": combined_question})
-    print(f"Raw response for {neighborhood} - Combined Question:")
-    print(res)
-    print("\n" + "="*50 + "\n")
+    neighborhood_results = {}
     
+    for category in [schema.name for schema in response_schemas]:
+        print (category)
+        res = chain.invoke({"neighborhood": neighborhood, "category": category})
+        parsed_output = parse_llm_output(res, category)
+        neighborhood_results[category] = parsed_output
+
+    all_results[neighborhood] = neighborhood_results
+
+   
+    all_results = prepare_for_mongodb(all_results)
+
+    mongo_ready = json_util.dumps(all_results[neighborhood], indent=2)
+   
+    print("Final results (ready for MongoDB)===>>>>")
+    print(mongo_ready)
 
 
 
