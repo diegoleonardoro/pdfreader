@@ -13,15 +13,15 @@ from bson import json_util
 load_dotenv()
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')
 
-# Initialize the db connection
+
 db_name = "insiderhood"
 db_connector = DatabaseConnector(dbname=db_name)
 db_connector.connect()
 
-# Your existing neighborhood lists here...
+
 test_hood = ['Williamsburg']
 
-# Base directory containing neighborhood JSONs
+
 base_directory = "Brooklyn_neighborhoods"
 
 response_schemas = [
@@ -40,10 +40,10 @@ response_schemas = [
 output_parser = StructuredOutputParser.from_response_schemas(response_schemas)
 format_instructions = output_parser.get_format_instructions()
 
-# Create LLM
+
 llm = ChatOpenAI(temperature=0)
 
-# Modify the prompt template
+
 template = """
 
     You are an expert storyteller that specializes on New York City neighborhoods. Paint a vivid picture of {neighborhood} for the category: {category}, using ONLY the provided context. Your words should transport the reader to the streets and the places. Be descriptive, engaging, and colorful in your language, but ensure every detail is grounded in the given information.
@@ -117,7 +117,7 @@ all_results = {}
 
 def clean_json_string(json_string):
     if isinstance(json_string, str):
-        # Remove backticks and "json" tags
+        
         return json_string.replace("```json", "").replace("```", "").strip()
     return json_string
 
@@ -125,7 +125,7 @@ def parse_llm_output(output, category):
     if isinstance(output, dict):
         return output.get(category, output)
     
-    # Remove backticks and "json" tags
+    
     output = output.replace("```json", "").replace("```", "").strip()
     
     try:
@@ -150,20 +150,29 @@ for neighborhood in test_hood:
     neighborhood_results = {}
     
     for category in [schema.name for schema in response_schemas]:
-        print (category)
+        print(category)
         res = chain.invoke({"neighborhood": neighborhood, "category": category})
         parsed_output = parse_llm_output(res, category)
         neighborhood_results[category] = parsed_output
 
     all_results[neighborhood] = neighborhood_results
 
-   
     all_results = prepare_for_mongodb(all_results)
 
-    mongo_ready = json_util.dumps(all_results[neighborhood], indent=2)
-   
-    print("Final results (ready for MongoDB)===>>>>")
-    print(mongo_ready)
+    mongo_ready = all_results[neighborhood]
+
+    print(json_util.dumps(mongo_ready, indent=2))
+
+    db_connector.replace_document(
+        "neighborhood_summaries",
+        {"neighborhood": neighborhood, "borough": "Brooklyn"},
+        {
+            "neighborhood": neighborhood,
+            "information": mongo_ready, 
+            "borough": "Brooklyn"
+        },
+        upsert=True
+    )
 
 
 
@@ -175,24 +184,4 @@ for neighborhood in test_hood:
 
 
 
-#   try:
-#         parsed_output = output_parser.parse(res)
-#         print(f"Results for {neighborhood}:")
-#         print(json.dumps(parsed_output, indent=2))
-#     except Exception as e:
-#         print(f"Error parsing output: {e}")
-#         print("Raw output:", res)
-
-#     # Store in database
-#     db_connector.replace_document(
-#         "neighborhood_summaries",
-#         {"neighborhood": neighborhood, "borough": "Brooklyn"},
-#         {
-#             "neighborhood": neighborhood,
-#             "response": parsed_output,
-#             "borough": "Brooklyn"
-#         },
-#         upsert=True
-#     )
-
-#     time.sleep(6)  
+ 
