@@ -10,8 +10,12 @@ import json
 # import openai
 import os
 import ast
+from db import DatabaseConnector
 
 # openai.api_key = os.getenv("OPENAI_API_KEY")
+db_name = "insiderhood"
+db_connector = DatabaseConnector(dbname=db_name)
+db_connector.connect()
 
 
 
@@ -47,25 +51,29 @@ def refine_search_results(input_data: Union[str, Dict]) -> dict:
     Refine and reformat the search results using OpenAI's API directly.
     """
     try:
-        data = ast.literal_eval(input_data)
+        data = ast.literal_eval(input_data) if isinstance(input_data, str) else input_data
     except (ValueError, SyntaxError):
         print("Failed to parse input_data as a dictionary")
         return
 
+    # Get the first key and its values
+    first_key = next(iter(data))
+    key_values = data[first_key]
+
+
     # Iterate through the keys of the dictionary
-    for key in data.keys():
+    refined_data = {}
+    for key in key_values.keys():
         print(f"Processing: {key}")
         
         # Access the value for each key
-        value = data[key]
-        # print("------------------------------")
-        # print("key", key)
-        # print("value", value)
-        # print("------------------------------")
+        value = key_values[key]
+        print("------------------------------")
+        print("key", key)
+        print("value", value)
+        print("------------------------------")
 
-        
-        refined_data = {}
-        if key == "Neighborhood Introduction":
+        if key in ["Neighborhood Introduction", "Location", "History", "Interesting Facts", "Demographics"]:
 
             content_list = [item['content'] for result in value for item in result['result'] if 'content' in item]
             urls_list = [item['url'] for result in value for item in result['result'] if 'url' in item]
@@ -94,8 +102,6 @@ def refine_search_results(input_data: Union[str, Dict]) -> dict:
             response_content = response.choices[0].message.content
             parsed_content = json.loads(response_content)
 
-            # refined_data[key] = response_content
-            
             cleaned_content = parsed_content['content'].replace('\\n', '\n').strip()
             cleaned_content = cleaned_content.replace('\\"', '"')
                 
@@ -105,8 +111,8 @@ def refine_search_results(input_data: Union[str, Dict]) -> dict:
             }
             
 
-        if key == "Restaurants":
-          refined_restaurants = []
+        if key in ["Restaurants", "Parks", "Night Life", "Main Attractions"]:
+          refined_places = []
           for item in value:
             for result in item['result']:
               # print("result==>> ", result)
@@ -115,9 +121,10 @@ def refine_search_results(input_data: Union[str, Dict]) -> dict:
               # print("------------------------------")
 
               prompt = f"""
+                    You are an expert writer who creates engaging descriptions of places. 
                     Extract the following information from the given content about a restaurant:
                     1. Name of the restaurant
-                    2. A brief description
+                    2. A engaging, descriptive and captivating description of the restaurant
                     3. The address (if available, otherwise leave blank)
 
                     Content: {result['content']}
@@ -136,15 +143,34 @@ def refine_search_results(input_data: Union[str, Dict]) -> dict:
               )
               parsed_response = json.loads(response.choices[0].message.content)
                     
-              refined_restaurants.append({
+              refined_places.append({
                         "url": result['url'],
                         "name": parsed_response['name'],
                         "description": parsed_response['description'],
                         "address": parsed_response['address']
                 })
               
-          print("refined_restaurants==>> ", refined_restaurants)
-          refined_data[key] = refined_restaurants
+          refined_data[key] = refined_places
 
+        # print("refined_data-->>>", refined_data)
+
+
+    print("-----------------------------------")
     print("refined_data-->>>", refined_data)
+    print("-----------------------------------")
+    print("refined_data type-->>>", type(refined_data))
+    print("-----------------------------------")
+
+
+    db_connector.replace_document(
+          "neighborhood_summaries",
+          {"neighborhood": "DUMBO", "borough":"Brooklyn"},
+          {
+              "neighborhood":  "DUMBO",
+              "information": refined_data, 
+              "borough": "Brooklyn"
+          },
+          upsert=True
+    )
+
     return refined_data

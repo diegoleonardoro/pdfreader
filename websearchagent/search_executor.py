@@ -5,37 +5,47 @@ from typing import List, Dict
 from langchain_core.messages import HumanMessage, AIMessage
 from langchain_community.utilities.tavily_search import TavilySearchAPIWrapper
 
-# la la la la la 
-
+# lelele le le le 
 # Initialize the Tavily search wrapper
 search = TavilySearchAPIWrapper()
 
-nhood = ['DUMBO', 'Brooklyn Heights', 'Park Slope', 'Williamsburg', 'Greenwich Village']
+neighborhoods = [
+    ('DUMBO', 'Brooklyn'),
+    # ('Brooklyn Heights', 'Brooklyn'),
+    # ('Park Slope', 'Brooklyn'),
+    # ('Williamsburg', 'Brooklyn'),
+    # ('Greenwich Village', 'Manhattan'), 
+]
+
 search_categories = [
-    # ['Neighborhood Introduction DUMBO, Brooklyn', 'Neighborhood Introduction'],
-    # ['DUMBO, Brooklyn, Location', 'Location'],
-    # ['DUMBO, Brooklyn, History', 'History'],
-    # ['DUMBO, Brooklyn, Interesting Facts', 'Interesting Facts'],
-    # ['DUMBO, Brooklyn, Demographics', 'Demographics'],
-    ['Specific Restaurants in DUMBO, Brooklyn, with their respective address and website', 'Restaurants'],
-    # ['Public Spaces/Parks in DUMBO, Brooklyn, with their respective address', 'Public Spaces'],
-    # ['Night Life spots in DUMBO, Brooklyn, with their respective address and website', 'Night Life'],
-    # ['Main Attractions in DUMBO, Brooklyn, with their respective address', 'Main Attractions']
+    ['{neighborhood}, {borough}, Neighborhood Introduction', 'Neighborhood Introduction'],
+    ['{neighborhood}, {borough}, Location', 'Location'],
+    ['{neighborhood}, {borough}, History', 'History'],
+    ['{neighborhood}, {borough}, Interesting Facts', 'Interesting Facts'],
+    ['{neighborhood}, {borough}, Demographics', 'Demographics'],
+    ['Specific Restaurants in {neighborhood}, {borough}, with their respective address and website', 'Restaurants'],
+    ['Parks in {neighborhood}, {borough}, with their respective address', 'Parks'],
+    ['Night Life spots in {neighborhood}, {borough}, with their respective address and website', 'Night Life'],
+    ['Main Attractions in {neighborhood}, {borough}, with their respective address', 'Main Attractions']
 ]
 
 def execute_tavily_searches(categories: List[List[str]] = search_categories) -> Dict[str, List[Dict[str, str]]]:
     results = {}
     
-    for category, key in categories:
-        search_query = category
-        search_result = search.results(search_query)
-        
-        results[key] = [
-            {
-                "query": search_query,
-                "result": search_result
-            }
-        ]
+    for neighborhood, borough in neighborhoods:
+        neighborhood_results = {}
+        for category_template, key in categories:
+            search_query = category_template.format(neighborhood=neighborhood, borough=borough)
+            search_result = search.results(search_query)
+            
+            neighborhood_results[key] = [
+                {
+                    "query": search_query,
+                    "result": search_result
+                }
+            ]
+        results[f"{neighborhood}, {borough}"] = neighborhood_results
+      
 
     return results
 
