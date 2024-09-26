@@ -106,8 +106,45 @@ def refine_search_results(input_data: Union[str, Dict]) -> dict:
             
 
         if key == "Restaurants":
-          print("value restos==>> ", value)
+          refined_restaurants = []
+          for item in value:
+            for result in item['result']:
+              # print("result==>> ", result)
+              # print("result['content']==>> ", result['content'])
+              # print("result['url']==>> ", result['url'])
+              # print("------------------------------")
 
+              prompt = f"""
+                    Extract the following information from the given content about a restaurant:
+                    1. Name of the restaurant
+                    2. A brief description
+                    3. The address (if available, otherwise leave blank)
+
+                    Content: {result['content']}
+
+                    Format your response as a JSON object with the following structure:
+                    {{
+                      "name": "Restaurant Name",
+                      "description": "Brief description of the restaurant",
+                      "address": "Restaurant address (if available)"
+                    }}
+              """
+              response = client.chat.completions.create(
+                model="gpt-4-turbo-preview",
+                messages=[{"role": "system", "content": prompt}],
+                response_format={"type": "json_object"}
+              )
+              parsed_response = json.loads(response.choices[0].message.content)
+                    
+              refined_restaurants.append({
+                        "url": result['url'],
+                        "name": parsed_response['name'],
+                        "description": parsed_response['description'],
+                        "address": parsed_response['address']
+                })
+              
+          print("refined_restaurants==>> ", refined_restaurants)
+          refined_data[key] = refined_restaurants
 
     print("refined_data-->>>", refined_data)
     return refined_data

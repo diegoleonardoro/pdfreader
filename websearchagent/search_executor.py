@@ -17,7 +17,7 @@ search_categories = [
     # ['DUMBO, Brooklyn, History', 'History'],
     # ['DUMBO, Brooklyn, Interesting Facts', 'Interesting Facts'],
     # ['DUMBO, Brooklyn, Demographics', 'Demographics'],
-    ['Restaurants DUMBO, Brooklyn, with their respective address and website', 'Restaurants'],
+    ['Specific Restaurants in DUMBO, Brooklyn, with their respective address and website', 'Restaurants'],
     # ['Public Spaces/Parks in DUMBO, Brooklyn, with their respective address', 'Public Spaces'],
     # ['Night Life spots in DUMBO, Brooklyn, with their respective address and website', 'Night Life'],
     # ['Main Attractions in DUMBO, Brooklyn, with their respective address', 'Main Attractions']
